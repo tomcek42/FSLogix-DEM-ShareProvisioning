@@ -1,0 +1,5 @@
+# Line endings for the PowerShell sources. Windows PowerShell 5.1 expects CRLF;
+# the UTF-8 byte order mark is enforced by .editorconfig.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf

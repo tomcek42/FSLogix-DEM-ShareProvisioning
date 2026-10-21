@@ -1,0 +1,3 @@
+Haelt den leeren Ordner im Repositorium. Data/ nimmt in Plan 02 AclTemplates.psd1 auf;
+Get-DataPath muss aber schon jetzt gegen einen tatsaechlich vorhandenen Ordner
+aufloesbar sein, auch in einem frischen Klon.

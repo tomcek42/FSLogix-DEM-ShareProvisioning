@@ -1,0 +1,19 @@
+# Build output. The single-file bundle is attached to each GitHub release
+# and rebuilt from the sources with Tools/Build-DemFsBundle.ps1.
+/dist/
+
+# Transcripts and local notes from test runs. They may contain domain,
+# server and group names and must never be committed.
+*.txt
+*.log
+*.transcript
+
+# Editor and OS files
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store

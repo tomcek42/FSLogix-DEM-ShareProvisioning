@@ -1,0 +1,4 @@
+Haelt den leeren Ordner im Repositorium. Public/ nimmt ab Plan 02 Get-AclTemplate auf;
+die Ordnertrennung Private/Public/Data muss aber schon jetzt in einem frischen Klon
+existieren, sonst laedt DemFsAcl.psm1 ins Leere und die IDENT-08-Pruefung in Plan 05
+liesse sich nicht abgrenzen.
