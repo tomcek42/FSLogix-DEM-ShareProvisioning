@@ -69,7 +69,7 @@ function Invoke-DemFsProvisioning {
     .PARAMETER Menu
         Nach jedem Durchlauf zurueck ins Hauptmenue, bis der Operator Beenden
         waehlt (Serverlauf 2026-09-25). Ohne den Schalter genau ein Durchlauf.
-        Der Einstieg Provision-DemFsShares.ps1 setzt ihn. Nur mit dem Schalter
+        Der Einstieg FSLogix-DEM-ShareProvisioning.ps1 setzt ihn. Nur mit dem Schalter
         folgt auf jeden Durchlauf die Abschlussfrage [M]/[R]/[E]; [R] zeigt
         den Detailbericht je Ziel und ist der Detailmodus (OUT-05 v1.3, D-01,
         D-02).

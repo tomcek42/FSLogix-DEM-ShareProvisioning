@@ -42,7 +42,7 @@
     Skriptdatei erbt den PSModulePath der aufrufenden Schale, und der
     Zuruecksetzer oben liefe damit ins Leere:
 
-        powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./Provision-DemFsShares.ps1
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./FSLogix-DEM-ShareProvisioning.ps1
 
     Die Sitzung muss erhoeht sein. Ist sie es nicht, meldet PRE-01 das als
     Abbruchbefund, und es wird nichts geschrieben.

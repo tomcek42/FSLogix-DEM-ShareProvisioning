@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
     Baut aus den Modulquellen genau eine lauffaehige Datei
-    dist/Provision-DemFsShares.ps1 (BUILD-01 bis BUILD-06).
+    dist/FSLogix-DEM-ShareProvisioning.ps1 (BUILD-01 bis BUILD-06).
 
 .DESCRIPTION
     Am 2026-09-21 brach ein Serverlauf ab, weil nur die Einstiegsdatei kopiert
@@ -24,7 +24,7 @@
          dem Code liefert; ohne Herstellerbelege und ohne Kommentare.
       4. Vorlauf -- StrictMode und $script:MitBelegen = $false.
       5. Quellen ohne Kommentare, je Funktion nur die .SYNOPSIS.
-      6. Einstieg aus Provision-DemFsShares.ps1 uebernehmen, ohne Modulimport.
+      6. Einstieg aus FSLogix-DEM-ShareProvisioning.ps1 uebernehmen, ohne Modulimport.
       7. Zwei Kopfzeilen (Quell-Commit, Erzeugungszeit mit Quellstand), dann
          mit BOM und CRLF schreiben.
 
@@ -683,7 +683,7 @@ $Quellblock = ($QuellTeile -join $Crlf)
 
 # --- 7. Einstieg uebernehmen -------------------------------------------------
 
-$EinstiegPfad = [System.IO.Path]::Combine($Wurzel, 'Provision-DemFsShares.ps1')
+$EinstiegPfad = [System.IO.Path]::Combine($Wurzel, 'FSLogix-DEM-ShareProvisioning.ps1')
 $EinstiegQuelle = Read-Quelltext -LiteralPath $EinstiegPfad
 
 $marken = $null
@@ -750,7 +750,7 @@ if ($QuellCommit -cnotmatch '^[0-9a-f]{40}$') {
 # Der Pfadfilter ist Teil der Zusage: eine Aenderung unter .planning/ veraendert
 # das Buendel nicht und darf seinen Kopf nicht bewegen.
 $StandLauf = Invoke-Git -Argumente @(
-    '-C', $Wurzel, 'status', '--porcelain', '--', 'DemFsAcl', 'Provision-DemFsShares.ps1')
+    '-C', $Wurzel, 'status', '--porcelain', '--', 'DemFsAcl', 'FSLogix-DEM-ShareProvisioning.ps1')
 
 if ($StandLauf.ExitCode -ne 0) {
     throw [System.InvalidOperationException]::new(
@@ -798,7 +798,7 @@ if (-not (Test-Path -LiteralPath $AusgabeOrdner)) {
     $null = New-Item -Path $AusgabeOrdner -ItemType Directory -Force
 }
 
-$Ausgabepfad = [System.IO.Path]::Combine($AusgabeOrdner, 'Provision-DemFsShares.ps1')
+$Ausgabepfad = [System.IO.Path]::Combine($AusgabeOrdner, 'FSLogix-DEM-ShareProvisioning.ps1')
 
 # UTF8Encoding mit Signatur: ohne BOM liest Windows PowerShell 5.1 die Datei als
 # ANSI, und jeder deutsche Umlaut in einem Ausgabetext wird zu Mojibake.

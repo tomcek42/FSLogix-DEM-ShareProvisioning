@@ -75,14 +75,14 @@ group; every additional group receives the same permissions as the first one.
 
 ## Quick start
 
-1. Download `Provision-DemFsShares.ps1` from the
+1. Download `FSLogix-DEM-ShareProvisioning.ps1` from the
    [latest release](https://github.com/tomcek42/FSLogix-DEM-ShareProvisioning/releases/latest).
    This single file contains the complete tool.
 2. Copy it to the file server **unchanged** (do not paste it through a text editor).
 3. Run it from an elevated prompt:
 
    ```
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Provision-DemFsShares.ps1
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\FSLogix-DEM-ShareProvisioning.ps1
    ```
 
    Use the `-File` form. Dot-sourcing the file or calling it via `-Command` is not supported.
@@ -107,7 +107,7 @@ After several runs in one session, the highest code is returned.
 ### Keeping a transcript
 
 ```
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Provision-DemFsShares.ps1 > run.txt
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\FSLogix-DEM-ShareProvisioning.ps1 > run.txt
 ```
 
 Plan, report and summary go to the file; the questions stay on the console. Colors are switched
@@ -116,7 +116,7 @@ off in this mode on purpose.
 ## Running from source
 
 Instead of the single-file release you can run the tool from this repository. Keep
-`Provision-DemFsShares.ps1` and the `DemFsAcl` folder together in the same directory and start it
+`FSLogix-DEM-ShareProvisioning.ps1` and the `DemFsAcl` folder together in the same directory and start it
 the same way as above. The source form additionally shows the vendor reference (URL and section)
 for every permission entry in the detailed report.
 
@@ -126,7 +126,7 @@ To build the single file yourself:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Tools\Build-DemFsBundle.ps1
 ```
 
-The result is written to `dist\Provision-DemFsShares.ps1`. The build needs `git` and must run
+The result is written to `dist\FSLogix-DEM-ShareProvisioning.ps1`. The build needs `git` and must run
 inside a clone of this repository; the two header lines of the bundle record the source commit.
 
 ## What the tool deliberately does not do
