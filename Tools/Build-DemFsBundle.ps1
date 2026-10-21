@@ -656,16 +656,34 @@ $Datenblock = @(
 # Laufs. Der Literal entsteht hier aus seinem Zeichencode, damit das Bauskript
 # selbst ASCII bleibt. Tests/Bundle.Tests.ps1 belegt, dass das Buendel auch als
 # ANSI gelesen fehlerfrei parst -- sonst kaeme die Probe gar nicht zum Zug.
+#
+# $script:BuendelVersion traegt die Modulversion ins Buendel (Aktualisierung,
+# 2026-10-21): Get-DemFsVersion liest sie, und ihr Dasein kennzeichnet das
+# Buendel. Save-DemFsUpdate erkennt die Version eines heruntergeladenen
+# Buendels an genau dieser Zeile -- ihre Form nicht aendern.
+# Per Musterausdruck statt Import-PowerShellDataFile: das Cmdlet fehlt, wenn der
+# Modulpfad der aufrufenden Schale Utility 7.0 vorschiebt.
+$ManifestText = Read-Quelltext -LiteralPath ([System.IO.Path]::Combine($ModulOrdner, 'DemFsAcl.psd1'))
+$VersionTreffer = [regex]::Match($ManifestText, "(?m)^\s*ModuleVersion\s*=\s*'(\d+\.\d+\.\d+)'\s*$")
+
+if (-not $VersionTreffer.Success) {
+    throw [System.InvalidOperationException]::new(
+        'DemFsAcl.psd1 nennt keine dreistellige ModuleVersion.')
+}
+
+$ModulVersion = $VersionTreffer.Groups[1].Value
+
 $Vorlauf = @'
 Set-StrictMode -Version Latest
 $script:MitBelegen = $false
+$script:BuendelVersion = '__VERSION__'
 if ('__UMLAUT__'.Length -ne 1) {
     $utf8OhneBom = [System.Text.UTF8Encoding]::new($false)
     $eigeneQuelle = [System.IO.File]::ReadAllText($PSCommandPath, $utf8OhneBom)
     & ([scriptblock]::Create($eigeneQuelle))
     exit $LASTEXITCODE
 }
-'@.Replace('__UMLAUT__', [string] [char] 0xE4)
+'@.Replace('__UMLAUT__', [string] [char] 0xE4).Replace('__VERSION__', $ModulVersion)
 
 # --- 6. Quellen ausschreiben -------------------------------------------------
 

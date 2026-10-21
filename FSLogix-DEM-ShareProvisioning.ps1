@@ -26,6 +26,12 @@
                oder entfernen.
     Nach jedem Durchlauf kehrt der Dialog ins Hauptmenue zurueck; 0 beendet.
 
+    Vor dem Hauptmenue prueft der Dialog, ob auf GitHub eine neuere Version
+    veroeffentlicht ist, und bietet im Buendel an, sie herunterzuladen und zu
+    starten. Abschalten mit der Umgebungsvariablen DEMFSACL_KEIN_UPDATE=1 --
+    eine Umgebungsvariable statt eines Parameters, weil dieses Skript keine
+    Parameter nimmt (siehe oben).
+
     Der Rueckgabewert kommt aus dem Feld ExitCode des Laufs (D-16): 0 nur bei
     durchweg OK, 1 bei Warnungen, 2 bei Fehlern, 3 bei verweigerter
     Bestaetigung. Bei mehreren Durchlaeufen gilt der hoechste Wert. Damit ist das Werkzeug ohne Aenderung skriptbar, und eine
@@ -71,7 +77,7 @@ try {
 
     Import-Module -Name $manifestPfad -Force
 
-    $lauf = Invoke-DemFsProvisioning -Menu
+    $lauf = Invoke-DemFsProvisioning -Menu -UpdatePath $PSCommandPath
 
     exit ([int] $lauf.ExitCode)
 }

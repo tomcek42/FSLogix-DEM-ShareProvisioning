@@ -74,22 +74,37 @@ function Invoke-DemFsProvisioning {
         den Detailbericht je Ziel und ist der Detailmodus (OUT-05 v1.3, D-01,
         D-02).
 
+    .PARAMETER UpdatePath
+        Pfad des laufenden Einstiegsskripts. Mit ihm prueft der Lauf nach dem
+        Banner auf eine neuere Veroeffentlichung (Wunsch Projektinhaber
+        2026-10-21). Nur der Einstieg setzt ihn; ohne ihn -- wie in allen
+        Tests -- gibt es keinen Netzzugriff.
+
     .OUTPUTS
         [pscustomobject] mit ExitCode, Confirmed, Target und Result.
 
     .EXAMPLE
-        $lauf = Invoke-DemFsProvisioning -Menu
+        $lauf = Invoke-DemFsProvisioning -Menu -UpdatePath $PSCommandPath
         exit $lauf.ExitCode
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param(
         [Parameter()]
-        [switch] $Menu
+        [switch] $Menu,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string] $UpdatePath = ''
     )
 
     # --- 1. Kapazitaet einmal vorab (D-14) ---------------------------------
     $kapazitaet = Start-DemFsDialog
+
+    if (-not [string]::IsNullOrEmpty($UpdatePath)) {
+        $nachfolger = Invoke-DemFsUpdateCheck -Capability $kapazitaet -ScriptPath $UpdatePath
+        if ($null -ne $nachfolger) { return $nachfolger }
+    }
 
     if ($Menu) { return (Invoke-DemFsMenuLoop -Capability $kapazitaet) }
 
@@ -99,6 +114,89 @@ function Invoke-DemFsProvisioning {
     if ($modus -ceq 'Exit') { return (Merge-DemFsRunResult -Run @()) }
 
     return (Invoke-DemFsRunMode -Mode $modus -Capability $kapazitaet)
+}
+
+function Invoke-DemFsUpdateCheck {
+    <#
+    .SYNOPSIS
+        Prueft beim Start auf eine neuere Veroeffentlichung und startet sie auf
+        Wunsch. Liefert das Laufergebnis des Nachfolgers oder $null, wenn
+        dieser Lauf weitergeht. Intern.
+
+    .DESCRIPTION
+        Nie ein Abbruch: ohne Netz, bei einem Fehler im Download oder in der
+        Pruefung steht eine Zeile da, und das Werkzeug laeuft in der
+        vorhandenen Version weiter. Die Quellform (Modulordner neben dem
+        Einstieg) wird nie ueberschrieben, sie nennt nur die neue Version --
+        dort ist git pull der Weg. DEMFSACL_KEIN_UPDATE=1 schaltet die Pruefung
+        ab; der Testeinstieg und jeder gestartete Nachfolger setzen es.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object] $Capability = $null,
+
+        [Parameter(Mandatory)]
+        [string] $ScriptPath
+    )
+
+    $aus = [System.Environment]::GetEnvironmentVariable('DEMFSACL_KEIN_UPDATE')
+    if ([string]::Equals($aus, '1', [System.StringComparison]::Ordinal)) { return $null }
+
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) { return $null }
+
+    $aktuell = Get-DemFsVersion
+    if ($null -eq $aktuell) { return $null }
+
+    $release = Get-DemFsLatestRelease
+
+    if (-not [bool] $release.Success) {
+        Write-OperatorLine -Capability $Capability -Line @(
+            (New-OperatorTextLine -Text ('Prüfung auf eine neue Version nicht möglich: {0}' -f $release.Reason)))
+        return $null
+    }
+
+    if ($release.Version -le $aktuell) {
+        Write-OperatorLine -Capability $Capability -Line @(
+            (New-OperatorTextLine -Severity 'OK' -Text ('[OK] Version {0} ist aktuell.' -f $aktuell)))
+        return $null
+    }
+
+    if (-not (Test-DemFsBundle)) {
+        Write-OperatorLine -Capability $Capability -Line @(
+            (New-OperatorTextLine -Severity 'Warning' -Text (
+                    '[WARNUNG] Version {0} ist veröffentlicht (laufend: {1}): {2}' -f $release.Version, $aktuell, $release.Url))
+            (New-OperatorTextLine -Text '          Diese Quellform wird nicht überschrieben; bitte per git pull aktualisieren.'))
+        return $null
+    }
+
+    if (-not (Read-UpdateOffer -CurrentVersion $aktuell -NewVersion $release.Version)) { return $null }
+
+    $ablage = Save-DemFsUpdate -Release $release -ScriptPath $ScriptPath -CurrentVersion $aktuell
+
+    if (-not [bool] $ablage.Success) {
+        Write-OperatorLine -Capability $Capability -Line @(
+            (New-OperatorTextLine -Severity 'Error' -Text ('[FEHLER] Aktualisierung nicht möglich: {0}' -f $ablage.Reason))
+            (New-OperatorTextLine -Text ('         Es geht mit Version {0} weiter.' -f $aktuell)))
+        return $null
+    }
+
+    Write-OperatorLine -Capability $Capability -Line @(
+        (New-OperatorTextLine -Severity 'OK' -Text ('[OK] Version {0} gespeichert: {1}' -f $release.Version, $ablage.Path))
+        (New-OperatorTextLine -Text ('     Bisherige Version gesichert: {0}' -f $ablage.BackupPath))
+        (New-OperatorTextLine -Text ('     Starte Version {0} ...' -f $release.Version))
+        (New-OperatorTextLine -Text ''))
+
+    $code = Start-DemFsUpdatedScript -ScriptPath $ScriptPath
+
+    return [pscustomobject] @{
+        ExitCode  = $code
+        Confirmed = $false
+        Target    = @()
+        Result    = @()
+    }
 }
 
 function Invoke-DemFsMenuLoop {

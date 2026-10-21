@@ -93,6 +93,18 @@ group; every additional group receives the same permissions as the first one.
 
 After each run you can show a detailed report (`R`), return to the main menu (`M`) or exit (`E`).
 
+### Update check
+
+At startup the tool asks GitHub for the latest release (5-second timeout). If a newer version
+exists, the single-file version offers to download and start it. The download is checked against
+the SHA-256 checksum published by GitHub and must parse cleanly. Only then does it replace the
+script, and the previous version is kept next to it as
+`FSLogix-DEM-ShareProvisioning.<version>.bak.ps1`. Without internet access the tool prints one line
+and continues. When run from source, it only reports the new version and never overwrites files.
+
+To switch the check off, set the environment variable `DEMFSACL_KEIN_UPDATE=1` before starting the
+tool.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -136,7 +148,8 @@ inside a clone of this repository; the two header lines of the bundle record the
 - It never creates user folders in advance.
 - No *Deny* entries, no `Everyone: Full Control` on NTFS, no `icacls.exe`.
 - It never changes the owner of a folder; it only reports it.
-- No log file, no unattended mode, no remote execution.
+- No log file, no unattended mode, no remote execution. The only network access is the update
+  check described above.
 - No Azure Files or Azure NetApp Files.
 
 ## Vendor documentation
