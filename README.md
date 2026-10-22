@@ -5,6 +5,9 @@ An interactive PowerShell tool for Windows file servers. It creates the storage 
 permissions as documented by the respective vendor, creates the SMB shares, and verifies the
 result by reading it back.
 
+[![Download Latest Release](https://img.shields.io/github/v/release/tomcek42/FSLogix-DEM-ShareProvisioning?label=Download&style=for-the-badge)](https://github.com/tomcek42/FSLogix-DEM-ShareProvisioning/releases/latest)
+![Downloads](https://img.shields.io/github/downloads/tomcek42/FSLogix-DEM-ShareProvisioning/total?style=for-the-badge&label=Downloads)
+
 > **Disclaimer — not an official tool.** This is an independent community project. It is not
 > affiliated with, endorsed by, or supported by Microsoft Corporation or Omnissa, LLC.
 > FSLogix is a trademark of Microsoft Corporation; Omnissa and Dynamic Environment Manager are

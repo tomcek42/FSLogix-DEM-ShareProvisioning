@@ -101,10 +101,15 @@ function Invoke-DemFsProvisioning {
     # --- 1. Kapazitaet einmal vorab (D-14) ---------------------------------
     $kapazitaet = Start-DemFsDialog
 
+    # Die Versionspruefung steht VOR dem Banner (Wunsch Projektinhaber
+    # 2026-10-22): sie gehoert nicht in den Einleitungstext, und startet ein
+    # Nachfolger, zeigt nur dieser sein Banner.
     if (-not [string]::IsNullOrEmpty($UpdatePath)) {
         $nachfolger = Invoke-DemFsUpdateCheck -Capability $kapazitaet -ScriptPath $UpdatePath
         if ($null -ne $nachfolger) { return $nachfolger }
     }
+
+    Write-DemFsStartBanner -Capability $kapazitaet
 
     if ($Menu) { return (Invoke-DemFsMenuLoop -Capability $kapazitaet) }
 
@@ -154,13 +159,15 @@ function Invoke-DemFsUpdateCheck {
 
     if (-not [bool] $release.Success) {
         Write-OperatorLine -Capability $Capability -Line @(
-            (New-OperatorTextLine -Text ('Prüfung auf eine neue Version nicht möglich: {0}' -f $release.Reason)))
+            (New-OperatorTextLine -Text ('Prüfung auf eine neue Version nicht möglich: {0}' -f $release.Reason))
+            (New-OperatorTextLine -Text ''))
         return $null
     }
 
     if ($release.Version -le $aktuell) {
         Write-OperatorLine -Capability $Capability -Line @(
-            (New-OperatorTextLine -Severity 'OK' -Text ('[OK] Version {0} ist aktuell.' -f $aktuell)))
+            (New-OperatorTextLine -Severity 'OK' -Text ('[OK] Version {0} ist aktuell.' -f $aktuell))
+            (New-OperatorTextLine -Text ''))
         return $null
     }
 
@@ -168,18 +175,23 @@ function Invoke-DemFsUpdateCheck {
         Write-OperatorLine -Capability $Capability -Line @(
             (New-OperatorTextLine -Severity 'Warning' -Text (
                     '[WARNUNG] Version {0} ist veröffentlicht (laufend: {1}): {2}' -f $release.Version, $aktuell, $release.Url))
-            (New-OperatorTextLine -Text '          Diese Quellform wird nicht überschrieben; bitte per git pull aktualisieren.'))
+            (New-OperatorTextLine -Text '          Diese Quellform wird nicht überschrieben; bitte per git pull aktualisieren.')
+            (New-OperatorTextLine -Text ''))
         return $null
     }
 
-    if (-not (Read-UpdateOffer -CurrentVersion $aktuell -NewVersion $release.Version)) { return $null }
+    if (-not (Read-UpdateOffer -CurrentVersion $aktuell -NewVersion $release.Version)) {
+        Write-OperatorLine -Capability $Capability -Line @((New-OperatorTextLine -Text ''))
+        return $null
+    }
 
     $ablage = Save-DemFsUpdate -Release $release -ScriptPath $ScriptPath -CurrentVersion $aktuell
 
     if (-not [bool] $ablage.Success) {
         Write-OperatorLine -Capability $Capability -Line @(
             (New-OperatorTextLine -Severity 'Error' -Text ('[FEHLER] Aktualisierung nicht möglich: {0}' -f $ablage.Reason))
-            (New-OperatorTextLine -Text ('         Es geht mit Version {0} weiter.' -f $aktuell)))
+            (New-OperatorTextLine -Text ('         Es geht mit Version {0} weiter.' -f $aktuell))
+            (New-OperatorTextLine -Text ''))
         return $null
     }
 
@@ -277,13 +289,8 @@ function Invoke-DemFsMenuLoop {
 function Start-DemFsDialog {
     <#
     .SYNOPSIS
-        Kapazitaet erheben, Rueckfragekanal setzen, Startbanner ausgeben.
-        Liefert die Kapazitaet. Intern.
-
-    .DESCRIPTION
-        G-04-4e: das Banner steht auf der Ausgabenaht und damit auch in einer
-        umgeleiteten Datei. Unter Umleitung reist es ausserdem mit der ersten
-        Frage -- dasselbe Muster wie der Plan an der Bestaetigung (G-04-3a).
+        Kapazitaet erheben und Rueckfragekanal setzen. Liefert die
+        Kapazitaet. Intern.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -295,6 +302,28 @@ function Start-DemFsDialog {
     Clear-PromptContext
     Set-PromptChannel -Capability $kapazitaet
 
+    return $kapazitaet
+}
+
+function Write-DemFsStartBanner {
+    <#
+    .SYNOPSIS
+        Gibt das Startbanner aus. Intern.
+
+    .DESCRIPTION
+        G-04-4e: das Banner steht auf der Ausgabenaht und damit auch in einer
+        umgeleiteten Datei. Unter Umleitung reist es ausserdem mit der ersten
+        Frage -- dasselbe Muster wie der Plan an der Bestaetigung (G-04-3a).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object] $Capability = $null
+    )
+
+    $kapazitaet = $Capability
+
     $banner = @(Get-StartBanner)
 
     Write-OperatorLine -Capability $kapazitaet -Line $banner
@@ -304,8 +333,6 @@ function Start-DemFsDialog {
             Add-PromptContext -Line @([string] $zeile.Text) -Severity ([string] $zeile.Severity)
         }
     }
-
-    return $kapazitaet
 }
 
 function Merge-DemFsRunResult {

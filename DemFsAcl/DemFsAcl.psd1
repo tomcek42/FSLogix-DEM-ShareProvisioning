@@ -8,7 +8,7 @@
 RootModule = 'DemFsAcl.psm1'
 
 # Die Versionsnummer dieses Moduls
-ModuleVersion = '1.1.0'
+ModuleVersion = '1.1.1'
 
 # Unterstützte PSEditions
 # CompatiblePSEditions = @()
