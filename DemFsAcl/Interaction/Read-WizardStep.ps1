@@ -40,12 +40,12 @@ function Get-WizardStepSequence {
         Check -- in dieser Reihenfolge.
 
         Audit (Weg 2) und Adjust (Weg 3), Entscheidung Projektinhaber
-        2026-09-30 (NAV-03): fest drei Schritte, unabhaengig von der
-        Auswahl -- AuditRoot, AuditGroups, AuditReport bzw. AdjustRoot,
-        AdjustChange, Check. Ob angeglichen wird, entscheidet sich erst im
-        Bericht; ein vierter Schritt, der nur manchmal erscheint, veraenderte
-        y mitten im Lauf. Angebot, Schreibstrecke und Benutzerordner-Bericht
-        gehoeren zu "Pruefung und Bericht".
+        2026-09-30 (NAV-03): eine feste Schrittzahl, unabhaengig von der
+        Auswahl. Weg 3: AdjustRoot, AdjustChange, Check. Weg 2 seit
+        2026-10-22 nur noch AuditRoot, AuditReport -- die Gruppen werden nicht
+        mehr bestaetigt, und ein Angleichen gibt es in Weg 2 nicht mehr.
+        Ansichtswahl und Benutzerordner-Bericht gehoeren zu "Pruefung und
+        Bericht".
 
     .OUTPUTS
         [string[]]
@@ -63,7 +63,7 @@ function Get-WizardStepSequence {
         [string[]] $Kind = @()
     )
 
-    if ($Mode -ceq 'Audit') { return [string[]] @('AuditRoot', 'AuditGroups', 'AuditReport') }
+    if ($Mode -ceq 'Audit') { return [string[]] @('AuditRoot', 'AuditReport') }
     if ($Mode -ceq 'Adjust') { return [string[]] @('AdjustRoot', 'AdjustChange', 'Check') }
 
     $arten = @(@($Kind) | Where-Object { $null -ne $_ })

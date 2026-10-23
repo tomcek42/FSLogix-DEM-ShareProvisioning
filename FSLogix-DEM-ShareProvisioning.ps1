@@ -19,9 +19,8 @@
       Weg 1 -- Ablagen neu einrichten: Ordner, NTFS-ACL, Freigabe anlegen.
       Weg 2 -- Bestehende Struktur pruefen: ein Wurzelverzeichnis einlesen,
                die gewaehlten Ordner auf NTFS-ACL, Freigabe, Offline-Caching
-               und Besitzer pruefen und berichten. Abweichende Ziele lassen
-               sich danach -- nur auf Nachfrage, Vorgabe nein -- ueber
-               denselben Schreibpfad wie Weg 1 angleichen.
+               und Besitzer pruefen und alle berechtigten Gruppen je Ablage
+               als Tabelle oder Block zeigen. Schreibt nie.
       Weg 3 -- NTFS-Berechtigungen anpassen: Gruppen hinzufuegen, ersetzen
                oder entfernen.
     Nach jedem Durchlauf kehrt der Dialog ins Hauptmenue zurueck; 0 beendet.
@@ -39,9 +38,7 @@
 
     Im Pruefweg (D-17): 0 Soll erfuellt (nicht gewaehlte Ordner und ein
     abweichender Besitzer zaehlen nicht), 1 Warnungen, 2 Rechte-, Freigabe- oder
-    Caching-Abweichung oder fehlende Erhoehung. Nach einem Angleichen gilt
-    der Wert des Schreibpfads; wird das JA dort nicht getippt, gilt der Wert
-    des Pruefberichts (es wurde nichts angeglichen).
+    Caching-Abweichung, fehlende Rolle oder fehlende Erhoehung.
 
 .NOTES
     DER AUFRUF ERFOLGT AUSNAHMSLOS PER -File, nie per -Command. Ein Aufruf ohne

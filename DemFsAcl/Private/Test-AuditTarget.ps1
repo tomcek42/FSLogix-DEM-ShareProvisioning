@@ -4,13 +4,15 @@
 
     GELESEN WIRD JE ZIEL GENAU EINMAL, ueber Get-AuditSnapshot und damit ueber
     die eine Lesestelle Get-ActualAceSet. Derselbe Schnappschuss speist die
-    Gruppenableitung (Get-AuditProductProposal) und die Pruefung -- eine zweite
-    Lesung hiesse, dass Vorschlag und Befund zwei verschiedene Staende sehen
+    Gruppenableitung (Get-AuditTargetBinding) und die Pruefung -- eine zweite
+    Lesung hiesse, dass Ableitung und Befund zwei verschiedene Staende sehen
     koennten, und eine zweite Lesestelle hoebe die Zusage aus VERIFY-07 auf.
 
     VERGLICHEN WIRD MIT DEM UNVERAENDERTEN VERGLEICHER Compare-AceSet, streng
-    gegen das gebundene Soll (D-14). Kein eigener Vergleich, keine eigene
-    Normalisierung.
+    gegen das Soll, das aus den am Ziel abgelesenen Gruppen gebunden ist
+    (D-14, seit 2026-10-22 alle Gruppen je Rolle). Kein eigener Vergleich,
+    keine eigene Normalisierung. Eine Pflichtrolle ohne Gruppe meldet die
+    Pruefung selbst (Befund RoleMissing).
 
     EIN NICHT LESBARES ZIEL IST EIN FEHLERBEFUND GENAU DIESES ZIELS, KEIN
     ABBRUCH (D-15). Die Ausnahme der Lesestelle wird zum Feld Error des
@@ -104,13 +106,15 @@ function Test-AuditTarget {
         NICHT LESBAR IST EIN BEFUND DIESES ZIELS, KEIN ABBRUCH (D-15): eine
         nicht lesbare Freigabeliste wird ein Fehler jedes Ziels, eine nicht
         lesbare Freigabe ein Fehler nur ihres Ziels -- jeweils mit Detail
-        Finding Unreadable, damit Select-AuditDeviation sie nicht anbietet.
+        Finding Unreadable.
 
-        Die Freigabedetails tragen den Freigabenamen (Feld ShareName): daran
-        waehlt Select-AuditDeviation die anzugleichende Freigabe.
+        Die Freigabesaetze tragen den Freigabenamen (ShareName), die gelesenen
+        Eintraege (ShareActual) und die abgelesenen Helpdesk-Gruppen
+        (HelpdeskSid) -- daraus baut die Gruppenuebersicht ihre Freigabespalte.
 
     .PARAMETER Target
-        Die Ziele, jeweils mit Kind, Path, Desired, Binding und ShareOptGroup.
+        Die Ziele, jeweils mit Kind, Path, Desired, Binding, MissingRole und
+        ShareOptGroup.
 
     .PARAMETER ShareList
         Die einmal gelesene Freigabeliste des Servers.
@@ -171,6 +175,23 @@ function Test-AuditTarget {
         }
         else {
             $saetze.Add((Compare-AceSet -Desired $ziel.Desired -Actual $schnapp.Actual -Path $pfad))
+
+            # Eine Pflichtrolle ohne Gruppe sieht der Vergleicher nicht: das
+            # Soll ist aus dem Ist abgelesen und hat fuer sie keinen Eintrag.
+            $fehlend = @()
+            if ($null -ne $ziel.PSObject.Properties['MissingRole']) { $fehlend = @(@($ziel.MissingRole) | Where-Object { -not [string]::IsNullOrEmpty([string] $_) }) }
+
+            $rollenKarte = Get-TokenRoleMap
+
+            foreach ($token in $fehlend) {
+
+                $meldung = 'Am ACL von "{0}" steht keine {1}: kein Eintrag trägt deren Rechte.' -f $pfad, (Get-TrusteeRoleLabel -Role ([string] $rollenKarte[[string] $token]))
+
+                $saetze.Add((New-ProvisioningResult -Kind ([string] $ziel.Kind) -Path $pfad -Stage 'AclVerify' `
+                            -Status 'Error' -Message $meldung -Detail @(
+                            [pscustomobject] @{ Finding = 'RoleMissing'; Reason = 'NoGroupWithRoleRights'; Token = [string] $token; Message = $meldung }
+                        )))
+            }
         }
 
         foreach ($satz in @(Test-AuditShare -Target $ziel -ShareList $ShareList -ShareListError $ShareListError)) {
@@ -241,10 +262,10 @@ function Test-AuditShare {
     }
 
     $shareOpt = @()
-    if ($null -ne $Target.PSObject.Properties['ShareOptGroup']) { $shareOpt = @($Target.ShareOptGroup) }
+    if ($null -ne $Target.PSObject.Properties['ShareOptGroup']) { $shareOpt = @(@($Target.ShareOptGroup) | Where-Object { -not [string]::IsNullOrEmpty([string] $_) }) }
 
-    $soll = @(ConvertTo-ShareDesired -Template (Get-ShareTemplate -Kind $kind) -Binding $Target.Binding -IncludeOptGroup $shareOpt)
-    $herkunft = Get-ShareProvenance -Desired $soll
+    $bindung = @{}
+    if ($Target.Binding -is [hashtable]) { foreach ($token in @($Target.Binding.Keys)) { $bindung[$token] = $Target.Binding[$token] } }
 
     if ($namen.Count -gt 1) {
         $saetze.Add((New-ProvisioningResult -Kind $kind -Path $pfad -Stage 'ShareVerify' -Status 'Warning' `
@@ -268,6 +289,22 @@ function Test-AuditShare {
                         -Detail @([pscustomobject] @{ Finding = 'Unreadable'; Reason = 'ShareNotReadable'; ShareName = $name; Message = $meldung })))
         }
         else {
+            # Helpdesk je Freigabe aus ihren eigenen Eintraegen (Weg 2 seit
+            # 2026-10-22): jede abgelesene Helpdesk-Gruppe ist gueltig.
+            $helpdesk = @()
+            $opt = @($shareOpt | Where-Object { $_ -cne 'Helpdesk' })
+
+            if ($kind -ceq 'DEMProfiles') {
+                $helpdesk = @(Get-AuditHelpdeskSid -ShareActual @($ist))
+                if ($helpdesk.Count -gt 0) {
+                    $bindung['<HelpdeskGroup>'] = [System.Security.Principal.SecurityIdentifier[]] @($helpdesk | ForEach-Object { [System.Security.Principal.SecurityIdentifier]::new($_) })
+                    $opt = @($opt) + @('Helpdesk')
+                }
+            }
+
+            $soll = @(ConvertTo-ShareDesired -Template (Get-ShareTemplate -Kind $kind) -Binding $bindung -IncludeOptGroup @($opt))
+            $herkunft = Get-ShareProvenance -Desired $soll
+
             $befunde = @(Compare-ShareAccess -Desired $soll -Actual @($ist))
 
             foreach ($befund in $befunde) {
@@ -278,10 +315,18 @@ function Test-AuditShare {
             $unerwartet = @($befunde | Where-Object { [string] $_.Finding -ceq 'Unexpected' }).Count
             $status = if ($befunde.Count -gt 0) { 'Error' } else { 'OK' }
 
-            $saetze.Add((New-ProvisioningResult -Kind $kind -Path $pfad -Stage 'ShareVerify' -Status $status `
-                        -Message ('Freigabe "{0}": {1} fehlend, {2} unerwartet.' -f $name, $fehlend, $unerwartet) `
-                        -Detail $befunde `
-                        -Provenance $herkunft.Provenance -Source $herkunft.Source -Section $herkunft.Section))
+            $satz = New-ProvisioningResult -Kind $kind -Path $pfad -Stage 'ShareVerify' -Status $status `
+                -Message ('Freigabe "{0}": {1} fehlend, {2} unerwartet.' -f $name, $fehlend, $unerwartet) `
+                -Detail $befunde `
+                -Provenance $herkunft.Provenance -Source $herkunft.Source -Section $herkunft.Section
+
+            # Die gelesenen Eintraege reisen fuer die Gruppenuebersicht mit --
+            # sie liest die Freigabe nicht ein zweites Mal.
+            $satz | Add-Member -NotePropertyName 'ShareName' -NotePropertyValue $name -Force
+            $satz | Add-Member -NotePropertyName 'ShareActual' -NotePropertyValue ([object[]] @($ist)) -Force
+            $satz | Add-Member -NotePropertyName 'HelpdeskSid' -NotePropertyValue ([string[]] @($helpdesk)) -Force
+
+            $saetze.Add($satz)
         }
 
         # --- Offline-Caching ----------------------------------------------
@@ -392,138 +437,4 @@ function Test-AuditOwnerExpected {
     }
 
     return $erwartet.Contains($Sid)
-}
-
-function Select-AuditDeviation {
-    <#
-    .SYNOPSIS
-        Die Ziele, die zum Angleichen angeboten werden (D-02, Planerentscheid
-        10 und 11 aus 05-02).
-
-    .DESCRIPTION
-        ANGEBOTEN WIRD NUR EINE BEWIESENE ABWEICHUNG: ein Fehlerbefund aus dem
-        Vergleich -- ein ACE-Befund aus Compare-AceSet (NTFS), ein
-        Freigabebefund aus Compare-ShareAccess (Freigabe), eine fehlende
-        Freigabe (Freigabe fehlt) oder ein falsches Caching (Caching).
-
-        NICHT LESBAR HEISST NICHT ANGEBOTEN. Traegt ein Satz des Ziels einen
-        Befund Unreadable -- ACL, Freigabeliste oder eine Freigabe --, ist dort
-        nichts bewiesen, und die Schreibstrecke wuerde ACL und Freigabe
-        gemeinsam anfassen. Geraten wird nichts.
-
-        MEHRERE FREIGABEN AUF EINEM PFAD: angeglichen wird die erste
-        abweichende in ordinaler Reihenfolge, sonst die erste; die uebrigen
-        stehen in KeptShareNames und bleiben unveraendert -- die
-        Schreibstrecke kennt je Ziel genau einen Freigabenamen.
-
-        Die Zuordnung Satz -> Ziel laeuft ueber Ordnerart UND Pfad
-        (Get-TargetResult, G-04-1a).
-
-    .OUTPUTS
-        Je abweichendem Ziel ein Datensatz mit Kind, Path, RelativePath,
-        ShareName (leer = keine Freigabe), KeptShareNames, Reason (Kurzformen),
-        Binding, AclOptGroup und ShareOptGroup.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [AllowNull()]
-        [AllowEmptyCollection()]
-        [object[]] $Target,
-
-        [Parameter(Mandatory)]
-        [AllowNull()]
-        [AllowEmptyCollection()]
-        [object[]] $Result
-    )
-
-    $auswahl = New-Object System.Collections.Generic.List[object]
-
-    foreach ($ziel in @($Target)) {
-
-        if ($null -eq $ziel) { continue }
-
-        $eigene = @(Get-TargetResult -Result @($Result) -Target $ziel)
-
-        if (@($eigene | Where-Object { Test-AuditUnreadable -Result $_ }).Count -gt 0) { continue }
-
-        $gruende = New-Object System.Collections.Generic.List[string]
-        $abweichendeFreigabe = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-
-        $fehler = @($eigene | Where-Object { [string] $_.Status -ceq 'Error' })
-
-        if (@($fehler | Where-Object { [string] $_.Stage -ceq 'AclVerify' }).Count -gt 0) { $gruende.Add('NTFS') }
-
-        foreach ($satz in @($fehler | Where-Object { [string] $_.Stage -ceq 'ShareVerify' })) {
-            foreach ($befund in @($satz.Detail)) {
-                if ($null -eq $befund) { continue }
-                if ($null -eq $befund.PSObject.Properties['Finding']) { continue }
-
-                $art = [string] $befund.Finding
-
-                if ($art -ceq 'ShareMissing') {
-                    if (-not $gruende.Contains('Freigabe fehlt')) { $gruende.Add('Freigabe fehlt') }
-                }
-                elseif (($art -ceq 'Missing') -or ($art -ceq 'Unexpected')) {
-                    if (-not $gruende.Contains('Freigabe')) { $gruende.Add('Freigabe') }
-                    if ($null -ne $befund.PSObject.Properties['ShareName']) { $null = $abweichendeFreigabe.Add([string] $befund.ShareName) }
-                }
-            }
-        }
-
-        foreach ($satz in @($fehler | Where-Object { [string] $_.Stage -ceq 'ShareCaching' })) {
-            if (-not $gruende.Contains('Caching')) { $gruende.Add('Caching') }
-            foreach ($befund in @($satz.Detail)) {
-                if (($null -ne $befund) -and ($null -ne $befund.PSObject.Properties['ShareName'])) {
-                    $null = $abweichendeFreigabe.Add([string] $befund.ShareName)
-                }
-            }
-        }
-
-        if ($gruende.Count -eq 0) { continue }
-
-        $freigaben = [string[]] @(@($ziel.ShareNames) | Where-Object { -not [string]::IsNullOrEmpty([string] $_) })
-        [System.Array]::Sort($freigaben, [System.StringComparer]::Ordinal)
-
-        $name = ''
-        foreach ($kandidat in $freigaben) {
-            if ($abweichendeFreigabe.Contains($kandidat)) { $name = $kandidat; break }
-        }
-        if ([string]::IsNullOrEmpty($name) -and ($freigaben.Count -gt 0)) { $name = $freigaben[0] }
-
-        $auswahl.Add([pscustomobject] @{
-                Kind           = [string] $ziel.Kind
-                Path           = [string] $ziel.Path
-                RelativePath   = [string] $ziel.RelativePath
-                ShareName      = $name
-                KeptShareNames = @($freigaben | Where-Object { $_ -cne $name })
-                Reason         = $gruende.ToArray()
-                Binding        = $ziel.Binding
-                AclOptGroup    = @($ziel.AclOptGroup)
-                ShareOptGroup  = @($ziel.ShareOptGroup)
-            })
-    }
-
-    return $auswahl.ToArray()
-}
-
-function Test-AuditUnreadable {
-    <#
-    .SYNOPSIS
-        Wahr, wenn ein Ergebnissatz einen Befund "nicht lesbar" traegt. Intern.
-    #>
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param(
-        [Parameter(Mandatory)]
-        [object] $Result
-    )
-
-    foreach ($befund in @($Result.Detail)) {
-        if ($null -eq $befund) { continue }
-        if ($null -eq $befund.PSObject.Properties['Finding']) { continue }
-        if ([string] $befund.Finding -ceq 'Unreadable') { return $true }
-    }
-
-    return $false
 }

@@ -3,13 +3,14 @@
     AUDIT-04, D-01, D-03, D-09 bis D-13).
 
     DIESE SCHICHT ERHEBT UND BESTAETIGT, SIE RECHNET NICHTS ACL-FACHLICHES.
-    Erkennung (Find-AuditTarget), Rollenableitung (Get-AuditProductProposal)
+    Erkennung (Find-AuditTarget), Gruppenableitung (Get-AuditTargetBinding)
     und Pruefung (Test-AuditTarget) stehen unter Private; hier wird gefragt,
     gezeigt und bestaetigt. Eingelesen wird ausschliesslich ueber die
     Fragefunktionen aus Read-OperatorInput.ps1 (FLOW-08).
 
     GERATEN WIRD NICHTS (D-09). Jede Zuordnung ist vor dem ersten Lesezugriff
-    bestaetigt, jeder abgelesene Vorschlag vor seiner Uebernahme.
+    bestaetigt. Gruppen werden seit 2026-10-22 nicht mehr erfragt: Weg 2
+    liest alle Gruppen je Rolle an der Rechteform ab und schreibt nie.
 
     VALIDATOREN OHNE GetNewClosure -- gemessen in Phase 4: die geschlossene
     Kopie bekommt einen neuen Modulskopus und findet die modulprivaten
@@ -676,349 +677,6 @@ function ConvertFrom-AuditKindChoice {
     }
 }
 
-function Read-AuditGroupBinding {
-    <#
-    .SYNOPSIS
-        D-11, D-12: die am vorhandenen ACL abgelesenen Gruppen eines Produkts
-        als Vorschlag bestaetigen -- sonst die normale Gruppenabfrage.
-
-    .DESCRIPTION
-        Fuer jede Rolle, die Get-RequiredTrusteeToken ueber die Ordnerarten des
-        Produkts verlangt, in der Reihenfolge Admin, User, Computer: bei einem
-        eindeutigen Vorschlag die abgelesene Gruppe mit Pfad, Anzeigename und
-        SID (IDENT-06) und die Frage nach der Uebernahme, Vorgabe ja. Bei Nein,
-        ohne Vorschlag oder bei mehreren Kandidaten die normale Abfrage ueber
-        Read-TrusteeRole (samt FSLogix-Angebot im DEM-Block).
-
-        Bestaetigte Vorschlaege landen ueber Set-TrusteeRoleRecord im
-        Rollenspeicher -- die eine Wahrheit ueber gebundene Gruppen.
-
-    .OUTPUTS
-        [pscustomobject] mit OptGroup: die bestaetigten Optionsgruppen.
-    #>
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param(
-        [Parameter(Mandatory)]
-        [ValidateSet('FSLogix', 'DEM')]
-        [string] $Product,
-
-        [Parameter(Mandatory)]
-        [object] $Proposal,
-
-        [Parameter(Mandatory)]
-        [AllowEmptyCollection()]
-        [string[]] $Kind
-    )
-
-    $gewaehlt = New-Object System.Collections.Generic.List[string]
-
-    # --- 1. Optionen (D-13) -------------------------------------------------
-    # Nur die am Ordner erkannten werden gefragt; eine nicht erkannte gilt als
-    # nicht gewaehlt -- das Soll ist dann herstellerwoertlich ohne sie.
-    foreach ($name in @('SystemAndBuiltinAdmins', 'ComputerEnvironmentSettings')) {
-
-        if (-not $Proposal.OptGroup.ContainsKey($name)) { continue }
-        if (-not [bool] $Proposal.OptGroup[$name]) { continue }
-
-        $pfad = ''
-        if ($Proposal.OptGroupPath.ContainsKey($name)) { $pfad = [string] $Proposal.OptGroupPath[$name] }
-
-        $optionsFrage = 'Option "{0}" ist am Ordner "{1}" gesetzt -- als Soll übernehmen?' -f $name, $pfad
-
-        if (Read-YesNoAnswer -Prompt $optionsFrage -Default $true) { $gewaehlt.Add($name) }
-
-        Add-PromptContext -Line @('')
-    }
-
-    # --- 2. Rollen unter den bestaetigten Optionen ---------------------------
-    foreach ($rolle in @(Get-AuditRequiredRole -Kind $Kind -AclOptGroup $gewaehlt.ToArray())) {
-        Read-AuditRoleChoice -Product $Product -Role $rolle -Proposal $Proposal
-    }
-
-    # --- 3. Helpdesk (nur DEM mit DEMProfiles-Ziel) --------------------------
-    if (($Product -ceq 'DEM') -and (@($Kind) -ccontains 'DEMProfiles')) {
-        Read-AuditHelpdeskChoice -Proposal $Proposal
-    }
-
-    return [pscustomobject] @{ OptGroup = $gewaehlt.ToArray() }
-}
-
-function Read-AuditHelpdeskChoice {
-    <#
-    .SYNOPSIS
-        Die Helpdesk-Gruppe im Pruefweg: an der DEMProfiles-Freigabe
-        abgelesen, bestaetigt oder normal gefragt (D-13). Intern zu
-        Read-AuditGroupBinding.
-
-    .DESCRIPTION
-        Found: Vorschlag mit Anzeigename und SID, Vorgabe ja; Ja bindet ueber
-        Set-HelpdeskResolution. Nein oder Ambiguous: die normale, optionale
-        Abfrage Read-HelpdeskGroup. NotFound: geklaert, nicht gebunden -- das
-        Soll ist herstellerwoertlich ohne Helpdesk.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object] $Proposal
-    )
-
-    $satz = $Proposal.Helpdesk
-
-    if (($null -eq $satz) -or ([string] $satz.State -ceq 'NotFound')) {
-        Set-HelpdeskResolution
-        return
-    }
-
-    if ([string] $satz.State -ceq 'Found') {
-
-        $anzeige = Get-TrusteeDisplayName -Sid $satz.Sid
-
-        Add-PromptContext -Severity 'OK' -Line @(
-            ('    Abgelesen an  : {0}' -f [string] $satz.Path)
-            ('    Aufgelöst auf: {0}' -f $anzeige)
-            ('    SID           : {0}' -f [string] $satz.Sid.Value)
-        )
-
-        if (Read-YesNoAnswer -Prompt 'Helpdesk-Gruppe (DEM): die an der Freigabe abgelesene Gruppe übernehmen?' -Default $true) {
-
-            Set-HelpdeskResolution -Record ([pscustomobject] @{
-                    InputValue  = [string] $satz.Sid.Value
-                    Sid         = $satz.Sid
-                    DisplayName = $anzeige
-                })
-
-            Add-PromptContext -Line @('')
-            return
-        }
-    }
-    else {
-        Add-PromptContext -Severity 'Warning' -Line @(
-            ('    Keine eindeutige Helpdesk-Gruppe abgelesen ({0} Kandidaten).' -f [int] $satz.Count)
-        )
-    }
-
-    $null = Read-HelpdeskGroup
-}
-
-function Get-AuditRequiredRole {
-    <#
-    .SYNOPSIS
-        Die Rollen, die die Ordnerarten eines Produkts unter den gewaehlten
-        Optionsgruppen verlangen, in der Reihenfolge Admin, User, Computer.
-        Intern.
-
-    .DESCRIPTION
-        Abgelesen ueber Get-RequiredTrusteeToken -- aus den Templates, nicht aus
-        einer Liste im Dialog. Die Helpdesk-Rolle fragt diese Funktion nie;
-        sie hat eine eigene Fragefolge.
-    #>
-    [CmdletBinding()]
-    [OutputType([string[]])]
-    param(
-        [Parameter(Mandatory)]
-        [AllowEmptyCollection()]
-        [string[]] $Kind,
-
-        [Parameter()]
-        [AllowNull()]
-        [AllowEmptyCollection()]
-        [string[]] $AclOptGroup = @()
-    )
-
-    $karte = Get-TokenRoleMap
-    $gesucht = New-Object System.Collections.Generic.List[string]
-
-    foreach ($art in @($Kind)) {
-
-        $optionen = @(Get-AuditKindOptGroup -Kind $art -OptGroup $AclOptGroup)
-
-        foreach ($token in @(Get-RequiredTrusteeToken -Kind $art -AclOptGroup $optionen `
-                    -ShareOptGroup @(Get-FixedOptGroup -Kind $art -Scope 'Share'))) {
-
-            if (-not $karte.ContainsKey($token)) { continue }
-            $rolle = [string] $karte[$token]
-            if ($rolle -ceq 'Helpdesk') { continue }
-            if (-not $gesucht.Contains($rolle)) { $gesucht.Add($rolle) }
-        }
-    }
-
-    return @(@('Admin', 'User', 'Computer') | Where-Object { $gesucht.Contains($_) })
-}
-
-function Get-AuditKindOptGroup {
-    <#
-    .SYNOPSIS
-        Die bestaetigten ACL-Optionsgruppen, die zur Ordnerart gehoeren.
-        Intern.
-
-    .DESCRIPTION
-        SystemAndBuiltinAdmins gehoert zu FSLogix-Profiles,
-        ComputerEnvironmentSettings zu DEMConfig und DEMProfiles;
-        FSLogix-Redirections und DEMComputerLogs haben keine. Eine
-        Optionsgruppe, die das Template der Ordnerart nicht kennt, liesse
-        Expand-AclTemplate werfen.
-    #>
-    [CmdletBinding()]
-    [OutputType([string[]])]
-    param(
-        [Parameter(Mandatory)]
-        [ValidateSet('FSLogix-Profiles', 'FSLogix-Redirections', 'DEMConfig', 'DEMProfiles', 'DEMComputerLogs')]
-        [string] $Kind,
-
-        [Parameter()]
-        [AllowNull()]
-        [AllowEmptyCollection()]
-        [string[]] $OptGroup = @()
-    )
-
-    $gewaehlt = @(@($OptGroup) | Where-Object { -not [string]::IsNullOrEmpty($_) })
-
-    if ($Kind -ceq 'FSLogix-Profiles') {
-        return @($gewaehlt | Where-Object { $_ -ceq 'SystemAndBuiltinAdmins' })
-    }
-
-    if (($Kind -ceq 'DEMConfig') -or ($Kind -ceq 'DEMProfiles')) {
-        return @($gewaehlt | Where-Object { $_ -ceq 'ComputerEnvironmentSettings' })
-    }
-
-    return @()
-}
-
-function Read-AuditRoleChoice {
-    <#
-    .SYNOPSIS
-        Eine Rolle eines Produkts: Vorschlag bestaetigen oder normal fragen.
-        Intern zu Read-AuditGroupBinding.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [ValidateSet('FSLogix', 'DEM')]
-        [string] $Product,
-
-        [Parameter(Mandatory)]
-        [ValidateSet('Admin', 'User', 'Computer')]
-        [string] $Role,
-
-        [Parameter(Mandatory)]
-        [object] $Proposal
-    )
-
-    # Schon erhoben -- etwa ueber die Helpdesk-Klaerung: nicht erneut.
-    if ((Get-TrusteeRoleStore -Product $Product).ContainsKey($Role)) { return }
-
-    $satz = $null
-    if ($Proposal.Role.ContainsKey($Role)) { $satz = $Proposal.Role[$Role] }
-
-    if (($null -ne $satz) -and ([string] $satz.State -ceq 'Found')) {
-
-        $anzeige = Get-TrusteeDisplayName -Sid $satz.Sid
-
-        Add-PromptContext -Severity 'OK' -Line @(
-            ('    Abgelesen an  : {0}' -f [string] $satz.Path)
-            ('    Aufgelöst auf: {0}' -f $anzeige)
-            ('    SID           : {0}' -f [string] $satz.Sid.Value)
-        )
-
-        $frage = '{0} ({1}): die am Ordner abgelesene Gruppe übernehmen?' -f (Get-TrusteeRoleLabel -Role $Role), $Product
-
-        if (Read-YesNoAnswer -Prompt $frage -Default $true) {
-
-            Set-TrusteeRoleRecord -Product $Product -Role $Role -Record ([pscustomobject] @{
-                    InputValue  = [string] $satz.Sid.Value
-                    Sid         = $satz.Sid
-                    DisplayName = $anzeige
-                })
-
-            Add-PromptContext -Line @('')
-            return
-        }
-    }
-    elseif (($null -ne $satz) -and ([string] $satz.State -ceq 'Ambiguous')) {
-        Add-PromptContext -Severity 'Warning' -Line @(
-            ('    Keine eindeutige Gruppe abgelesen ({0} Kandidaten) -- bitte angeben.' -f [int] $satz.Count)
-        )
-    }
-
-    $null = Read-TrusteeRole -Role $Role -Product $Product
-}
-
-function Read-AuditAdjustOffer {
-    <#
-    .SYNOPSIS
-        Das Angebot nach dem Pruefbericht: die abweichenden Ziele ueber den
-        Schreibpfad angleichen? Vorgabe nein (D-02, AUDIT-07).
-
-    .DESCRIPTION
-        Gestellt wird die Frage nur, wenn es abweichende Ziele gibt -- das
-        entscheidet der Aufrufer. Wer ablehnt oder Enter drueckt, hat einen
-        reinen Prueflauf: bis hierhin wurde nichts geschrieben und nichts
-        geprobt.
-
-    .PARAMETER Deviation
-        Die Datensaetze aus Select-AuditDeviation.
-
-    .OUTPUTS
-        [bool] -- wahr heisst angleichen.
-    #>
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param(
-        [Parameter(Mandatory)]
-        [object[]] $Deviation
-    )
-
-    $abweichend = @(@($Deviation) | Where-Object { $null -ne $_ })
-
-    $zeilen = New-Object System.Collections.Generic.List[string]
-    $zeilen.Add('  Abweichende Ziele:')
-
-    foreach ($satz in $abweichend) {
-
-        # Die Gruende in Kurzform (NTFS, Freigabe fehlt, Freigabe, Caching).
-        $gruende = @()
-        if ($null -ne $satz.PSObject.Properties['Reason']) { $gruende = @(@($satz.Reason) | Where-Object { -not [string]::IsNullOrEmpty([string] $_) }) }
-        $zusatz = if ($gruende.Count -gt 0) { ' -- ' + ($gruende -join ', ') } else { '' }
-
-        $zeilen.Add(('    {0} ({1}){2}' -f (Get-AuditAdjustLabel -Deviation $satz), [string] $satz.Kind, $zusatz))
-
-        # Weitere Freigaben auf demselben Pfad bleiben unveraendert
-        # (Planerentscheid 11) -- ausdruecklich genannt, nicht still.
-        $bleiben = @()
-        if ($null -ne $satz.PSObject.Properties['KeptShareNames']) { $bleiben = @(@($satz.KeptShareNames) | Where-Object { -not [string]::IsNullOrEmpty([string] $_) }) }
-        if ($bleiben.Count -gt 0) { $zeilen.Add(('      bleibt unverändert: {0}' -f ($bleiben -join ', '))) }
-    }
-
-    Add-PromptContext -Line @('')
-    Add-PromptContext -Line $zeilen.ToArray()
-
-    return (Read-YesNoAnswer -Prompt ('Diese {0} Ziele jetzt über den Schreibpfad angleichen?' -f $abweichend.Count) -Default $false)
-}
-
-function Get-AuditAdjustLabel {
-    <#
-    .SYNOPSIS
-        Die Bezeichnung eines abweichenden Ziels im Angebot: relativ zur
-        Wurzel, bei der Wurzel selbst ihr Blattname. Intern.
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)]
-        [object] $Deviation
-    )
-
-    $relativ = [string] $Deviation.RelativePath
-
-    if ([string]::IsNullOrEmpty($relativ) -or ($relativ -ceq '.')) {
-        $relativ = [System.IO.Path]::GetFileName(([string] $Deviation.Path).TrimEnd([char] 92, [char] 47))
-        if ([string]::IsNullOrEmpty($relativ)) { $relativ = [string] $Deviation.Path }
-    }
-
-    return $relativ
-}
-
 function Read-UserFolderOffer {
     <#
     .SYNOPSIS
@@ -1060,60 +718,75 @@ function Read-UserFolderOffer {
     return (Read-YesNoAnswer -Prompt 'Auch die Benutzerordner prüfen?' -Default $false)
 }
 
-function Read-AuditAdjustTarget {
+function Read-AuditViewChoice {
     <#
     .SYNOPSIS
-        Baut aus den abweichenden Zielen die Ziele des Schreibpfads; fehlt
-        eine Freigabe, wird ihr Name erfragt (D-04, SHARE-02, G-04-4b).
+        Nach dem Pruefbericht: in die andere Ansicht wechseln oder weiter
+        (Entscheidung Projektinhaber 2026-10-22).
 
     .DESCRIPTION
-        Der Datensatz hat die Form, die Invoke-ProvisioningWrite auch von
-        Weg 1 bekommt: Kind, Path, ShareName, IsExisting (immer wahr),
-        Binding, AclOptGroup, ShareOptGroup.
+        Der Bericht erscheint zuerst als Tabelle. Mit B kommt er erneut als
+        Block je Ablage, mit T wieder als Tabelle; Enter oder W geht weiter.
+        Gelesen wird nichts neu -- die Ansicht ist nur eine andere Ausgabe
+        derselben Ergebnisse.
 
-        Den Freigabenamen bestimmt der Abweichungsdatensatz. Ist er leer --
-        auf den Pfad zeigt keine Freigabe --, fragt Read-ShareName mit dem
-        Vorschlag Blattname plus '$'; die Laufdoppel-Pruefung ueber
-        Get-TargetConflict kommt damit unveraendert mit. Angelegt wird die
-        Freigabe spaeter wie beim Anlegen: erst nach verifiziertem ACL
-        (SHARE-03).
+    .PARAMETER Current
+        Die gerade gezeigte Ansicht: Table oder Block.
 
-    .PARAMETER Target
-        Die Datensaetze aus Select-AuditDeviation.
+    .OUTPUTS
+        [string] -- Table, Block oder Continue.
     #>
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory)]
-        [object[]] $Target
+        [ValidateSet('Table', 'Block')]
+        [string] $Current
     )
 
-    $erhoben = New-Object System.Collections.Generic.List[object]
+    Add-PromptContext -Line @('')
 
-    foreach ($satz in @($Target)) {
-
-        if ($null -eq $satz) { continue }
-
-        $art = [string] $satz.Kind
-        $pfad = [string] $satz.Path
-        $name = [string] $satz.ShareName
-
-        if ([string]::IsNullOrWhiteSpace($name)) {
-            $blatt = [System.IO.Path]::GetFileName($pfad.TrimEnd([char] 92, [char] 47))
-            $name = Read-ShareName -Kind $art -DefaultName $blatt -Path $pfad -Target $erhoben.ToArray()
-        }
-
-        $erhoben.Add([pscustomobject] @{
-                Kind          = $art
-                Path          = $pfad
-                ShareName     = $name
-                IsExisting    = $true
-                Binding       = $satz.Binding
-                AclOptGroup   = @($satz.AclOptGroup)
-                ShareOptGroup = @($satz.ShareOptGroup)
-            })
+    # Zwei feste Pruefer statt einer Variablen im Pruefer: ohne
+    # GetNewClosure sieht der Pruefer keine lokale Variable sicher.
+    if ($Current -ceq 'Table') {
+        $wahl = ([string] (Read-RequiredText -Prompt '[B] Blockansicht / [W] Weiter' -DefaultValue 'W' `
+                    -Validator { param($Wert) Test-AuditViewChoice -Value $Wert -Other 'B' })).Trim()
+    }
+    else {
+        $wahl = ([string] (Read-RequiredText -Prompt '[T] Tabellenansicht / [W] Weiter' -DefaultValue 'W' `
+                    -Validator { param($Wert) Test-AuditViewChoice -Value $Wert -Other 'T' })).Trim()
     }
 
-    return $erhoben.ToArray()
+    if ([string]::Equals($wahl, 'B', [System.StringComparison]::OrdinalIgnoreCase)) { return 'Block' }
+    if ([string]::Equals($wahl, 'T', [System.StringComparison]::OrdinalIgnoreCase)) { return 'Table' }
+
+    return 'Continue'
+}
+
+function Test-AuditViewChoice {
+    <#
+    .SYNOPSIS
+        Die Wahl nach dem Pruefbericht: W oder die andere Ansicht. Intern.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $Value,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('B', 'T')]
+        [string] $Other
+    )
+
+    foreach ($erlaubt in @('W', $Other)) {
+        if ([string]::Equals($Value.Trim(), $erlaubt, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return [pscustomobject] @{ IsValid = $true; Reason = '' }
+        }
+    }
+
+    return [pscustomobject] @{ IsValid = $false; Reason = ('Erwartet wird {0} oder W.' -f $Other) }
 }
 
 function Set-AuditPurpose {

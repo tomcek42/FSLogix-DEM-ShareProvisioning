@@ -157,10 +157,10 @@ function New-AdjustState {
         $verweigernd = @($vorher | Where-Object { $_.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow })
 
         if ($verweigernd.Count -gt 0) {
-            $grund = 'Die Wurzel trägt {0} verweigernde(n) Eintrag/Einträge. Solche Einträge schreibt dieses Werkzeug nie; bitte zuerst mit Option 2 angleichen.' -f $verweigernd.Count
+            $grund = 'Die Wurzel trägt {0} verweigernde(n) Eintrag/Einträge. Solche Einträge schreibt dieses Werkzeug nie; bitte die Wurzel zuerst mit Option 1 (vorhandenen Ordner übernehmen) neu berechtigen.' -f $verweigernd.Count
         }
         elseif (-not [bool] $Actual.IsProtected -or @($Actual.Inherited).Count -gt 0) {
-            $grund = 'Die Wurzel erbt Rechte vom übergeordneten Ordner. Angepasst werden nur Wurzeln mit abgeschalteter Vererbung; bitte zuerst mit Option 2 angleichen.'
+            $grund = 'Die Wurzel erbt Rechte vom übergeordneten Ordner. Angepasst werden nur Wurzeln mit abgeschalteter Vererbung; bitte die Wurzel zuerst mit Option 1 (vorhandenen Ordner übernehmen) neu berechtigen.'
         }
     }
 

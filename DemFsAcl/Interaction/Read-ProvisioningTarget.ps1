@@ -183,9 +183,10 @@ function Get-DialogUeberschrift {
         erhalten (Tests leiten den Titel der Komponentenfrage daraus her).
         FSLogix und DEM dienen in Weg 1 und Weg 2 als Produktzeile innerhalb
         des Gruppenschritts. Seit 09-02 (NAV-03) die Schritte von Weg 2
-        (AuditRoot, AuditGroups, AuditReport) und Weg 3 (AdjustRoot,
-        AdjustChange, Check) und der Kopf Menu des Hauptmenues; die frueheren
-        Blockschluessel Audit und Adjust entfallen.
+        (AuditRoot, AuditReport -- AuditGroups entfiel am 2026-10-22 mit der
+        Gruppenbestaetigung) und Weg 3 (AdjustRoot, AdjustChange, Check) und
+        der Kopf Menu des Hauptmenues; die frueheren Blockschluessel Audit
+        und Adjust entfallen.
 
     .OUTPUTS
         [hashtable] Schluessel -> Ueberschriftstext.
@@ -207,7 +208,6 @@ function Get-DialogUeberschrift {
         # Weg 2 und Weg 3 (NAV-03, Entscheidung Projektinhaber 2026-09-30);
         # Weg 3 endet mit Check wie Weg 1.
         AuditRoot     = 'Wurzelverzeichnis und Zuordnung'
-        AuditGroups   = 'Gruppen und Optionen bestätigen'
         AuditReport   = 'Prüfung und Bericht'
         AdjustRoot    = 'Wurzelverzeichnis und Auswahl'
         AdjustChange  = 'Änderungen erfassen'

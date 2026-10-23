@@ -90,6 +90,8 @@ function Get-ReportUeberschrift {
 
         # Phase 5 -- der Bericht der Bestandspruefung (D-16, D-17).
         AuditTable    = 'Prüfbericht -- ein Ziel je Zeile:'
+        AuditGroupTable = 'Berechtigte Prinzipale je Ablage:'
+        AuditBlock    = 'Prüfbericht -- ein Block je Ablage:'
         AuditDetail   = 'Befunde je Ziel:'
 
         AdjustPlan    = 'Plan -- diese Änderungen werden geschrieben:'
@@ -994,7 +996,7 @@ function Format-ProvisioningSummary {
         fragt die Maschine nie selbst (OUT-06). Leer erscheint als <Server>.
 
     .PARAMETER Table
-        Weg 1 und das Angleichen in Weg 2: die Ergebnistabelle je Ziel, die
+        Weg 1: die Ergebnistabelle je Ziel, die
         Befunde nur fuer Ziele, die nicht OK sind, und unter dem
         Gesamtzustand der Abschlussblock -- Abschlussmeldung und Kurzuebersicht
         aus Format-ProvisioningClosing (OUT-04 v1.3).
@@ -1171,7 +1173,7 @@ function Format-ProvisioningSummary {
                 (Get-StatusMarkierung -Status $gesamt),
                 (Get-StatusZeichen -Status $gesamt -Capability $Capability))))
 
-    # OUT-04 (v1.3): nur im Zweig -Table (Weg 1 und das Angleichen in Weg 2)
+    # OUT-04 (v1.3): nur im Zweig -Table (Weg 1)
     # die Abschlussmeldung mit Kurzuebersicht, direkt hinter dem
     # Gesamtzustand und vor dem UNC-Hinweis.
     if ($Table) {

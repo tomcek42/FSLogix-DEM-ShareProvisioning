@@ -14,24 +14,23 @@
       3. Erkennung und bestaetigte Zuordnung (D-05 bis D-10) -- VOR dem ersten
          Lesezugriff auf ein ACL.
       4. Je Ziel GENAU EINE Lesung (Get-AuditSnapshot).
-      5. Je Produkt (FSLogix vor DEM) Gruppen am Schnappschuss ablesen und
-         bestaetigen (D-11 bis D-13), dann je Ziel das Soll binden.
+      5. Je Ziel die Gruppen am Schnappschuss ablesen, OHNE RUECKFRAGE und
+         mit beliebig vielen Gruppen je Rolle (Get-AuditTargetBinding,
+         Entscheidung Projektinhaber 2026-10-22), und das Soll binden.
       6. Strenge Pruefung je Ziel (D-14, D-15).
-      7. Bericht und Rueckgabewert (D-16 bis D-18).
-      8. Nur bei bewiesener Abweichung das Angebot, anzugleichen (D-02,
-         AUDIT-07), Vorgabe nein. Nach Ja laufen die abweichenden Ziele durch
-         Invoke-ProvisioningWrite -- dieselbe Schreibstrecke wie Weg 1.
+      7. Bericht und Rueckgabewert (D-16 bis D-18): zuerst als Tabelle, auf
+         Wunsch als Block je Ablage und zurueck.
+      8. Kein Angebot zum Angleichen mehr (Entscheidung Projektinhaber
+         2026-10-22): ohne erfragte Gruppen gibt es kein eindeutiges Soll zum
+         Schreiben. Bei einer Abweichung nur der Hinweis auf Weg 3 und Weg 1.
       9. Nur auf Wunsch, Vorgabe nein: die Benutzerordner der ersten Ebene
          rein lesend pruefen -- USR-01 bis USR-10; kein Angebot, kein
          Schreiben. Jeder Ausgang nach der Zuordnung laeuft hier durch, der
          Rueckgabewert ist der hoehere aus Lauf und Bericht.
 
-    BIS ZUR ZUSAGE WIRD NICHTS GESCHRIEBEN (D-02). Keine Schreib-Seam, keine
-    Schreibprobe; Tests/Audit.Tests.ps1 haelt das je Durchstichfall nach. Die
-    Schreibprobe PRE-07 gehoert zum Preflight der Schreibstrecke und laeuft
-    erst nach dem Ja auf das Angebot, ACL und Freigabe erst nach dem
-    getippten JA (Planerentscheid 8 aus 05-02). Schritt 9 schreibt nie, auch
-    nicht nach einer Zusage in Schritt 8 (Tests/UserFolderReadOnly.Tests.ps1).
+    WEG 2 SCHREIBT NIE (D-02). Keine Schreib-Seam, keine Schreibprobe;
+    Tests/Audit.Tests.ps1 haelt das je Durchstichfall nach, und
+    Tests/UserFolderReadOnly.Tests.ps1 fuer den Benutzerordner-Bericht.
 
     KEIN EINGABE-CMDLET UND KEIN AUSGABE-CMDLET IN DIESER DATEI (FLOW-08,
     OUT-07).
@@ -44,9 +43,10 @@ function Invoke-DemFsAudit {
         Gruppen, Pruefung, Bericht.
 
     .OUTPUTS
-        [pscustomobject] mit ExitCode, Confirmed, Target und Result -- dieselbe
-        Form wie Invoke-DemFsProvisioning. Confirmed heisst "geschrieben" und
-        ist im reinen Pruefweg falsch.
+        [pscustomobject] mit ExitCode, Confirmed, Target, Result und Group --
+        dieselbe Form wie Invoke-DemFsProvisioning, dazu die Namenskarte der
+        angezeigten Prinzipale fuer den Detailbericht [R]. Confirmed heisst
+        "geschrieben" und ist im Pruefweg immer falsch.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -125,58 +125,22 @@ function Invoke-DemFsAudit {
     # --- 4. Je Ziel genau eine Lesung ---------------------------------------
     $schnapp = Get-AuditSnapshot -Target $ziele
 
-    # --- 5. Gruppen je Produkt, dann das Soll je Ziel -----------------------
-    # NAV-03: Schritt 2 "Gruppen und Optionen bestaetigen" -- nur mit
-    # mindestens einem Ziel; der Kopf reist als Kontext mit der ersten Frage
-    # der Produktschleife, je Produkt danach eine Produktzeile.
-    $optionen = @{}
+    # --- 5. Gruppen je Ziel, abgelesen ohne Rueckfrage ---------------------
+    # Seit 2026-10-22 (Entscheidung Projektinhaber): jede Gruppe, deren
+    # Rechteform eine Rolle traegt, gilt -- beliebig viele je Rolle. Das Soll
+    # entsteht aus den abgelesenen Gruppen; eine Pflichtrolle ohne Gruppe
+    # meldet die Pruefung.
     $folge = @(Get-WizardStepSequence -Mode Audit)
-
-    if ($ziele.Count -gt 0) {
-        Add-PromptContext -Severity 'Heading' -Line @(Get-DialogUeberschriftZeile -Key 'AuditGroups' -Sequence $folge)
-    }
-
-    foreach ($produkt in @('FSLogix', 'DEM')) {
-
-        $eigene = @($ziele | Where-Object { (Get-KindProduct -Kind ([string] $_.Kind)) -ceq $produkt })
-        if ($eigene.Count -eq 0) { continue }
-
-        Add-PromptContext -Line @('')
-        Add-PromptContext -Severity 'Heading' -Line @(('  {0}' -f (Get-ProductHeading -Product $produkt -Kind @($eigene | ForEach-Object { [string] $_.Kind }))))
-
-        # Helpdesk (D-13): abgelesen an der ersten Freigabe des ersten
-        # DEMProfiles-Ziels. Ein Lesefehler heisst: kein Vorschlag.
-        $helpdeskIst = $null
-        $helpdeskPfad = ''
-
-        $profilZiel = @($eigene | Where-Object { [string] $_.Kind -ceq 'DEMProfiles' } | Sort-Object -Property { [string] $_.Path })
-
-        if (($produkt -ceq 'DEM') -and ($profilZiel.Count -gt 0) -and (@($profilZiel[0].ShareNames).Count -gt 0)) {
-
-            $freigabe = [string] @($profilZiel[0].ShareNames)[0]
-            $helpdeskPfad = 'Freigabe "{0}"' -f $freigabe
-
-            try { $helpdeskIst = @(ConvertTo-ShareActual -Entry @(Get-ShareAccessEntry -Name $freigabe)) }
-            catch { $helpdeskIst = $null }
-        }
-
-        $vorschlag = Get-AuditProductProposal -Product $produkt -Target $eigene -Snapshot $schnapp `
-            -HelpdeskShareActual $helpdeskIst -HelpdeskPath $helpdeskPfad
-        $arten = @($eigene | ForEach-Object { [string] $_.Kind } | Select-Object -Unique)
-
-        $bestaetigt = Read-AuditGroupBinding -Product $produkt -Proposal $vorschlag -Kind $arten
-        $optionen[$produkt] = @($bestaetigt.OptGroup)
-    }
 
     $gebunden = New-Object System.Collections.Generic.List[object]
 
     foreach ($ziel in $ziele) {
 
         $art = [string] $ziel.Kind
-        $aclOpt = @(Get-AuditKindOptGroup -Kind $art -OptGroup @($optionen[(Get-KindProduct -Kind $art)]))
-        $shareOpt = @(Get-FixedOptGroup -Kind $art -Scope 'Share')
-        $bindung = Read-GroupBinding -Kind $art -AclOptGroup $aclOpt -ShareOptGroup $shareOpt
+        $schnappEintrag = Get-AuditSnapshotEntry -Snapshot $schnapp -LiteralPath ([string] $ziel.Path)
+        $ist = if ($null -ne $schnappEintrag) { $schnappEintrag.Actual } else { $null }
 
+        $ableitung = Get-AuditTargetBinding -Kind $art -Actual $ist
         $freigaben = @(@($ziel.ShareNames) | Where-Object { -not [string]::IsNullOrEmpty([string] $_) })
 
         $gebunden.Add([pscustomobject] @{
@@ -186,10 +150,12 @@ function Invoke-DemFsAudit {
                 ShareNames    = $freigaben
                 ShareName     = $(if ($freigaben.Count -gt 0) { $freigaben -join ', ' } else { '(keine)' })
                 IsExisting    = $true
-                Binding       = $bindung
-                AclOptGroup   = $aclOpt
-                ShareOptGroup = $shareOpt
-                Desired       = (Expand-AclTemplate -Template (Get-AclTemplate -Kind $art) -Binding $bindung -IncludeOptGroup $aclOpt)
+                Binding       = $ableitung.Binding
+                Role          = $ableitung.Role
+                MissingRole   = $ableitung.MissingRole
+                AclOptGroup   = $ableitung.AclOptGroup
+                ShareOptGroup = @()
+                Desired       = (New-AuditDesired -Kind $art -Derivation $ableitung)
             })
     }
 
@@ -219,70 +185,64 @@ function Invoke-DemFsAudit {
 
     $alle = $ergebnisse.ToArray()
 
-    # --- 7. Bericht und Rueckgabewert ---------------------------------------
-    # NAV-03: Schritt 3 beginnt mit einer Ausgabe -- der Kopf geht ueber die
-    # Ausgabenaht. Angebot, Schreibstrecke und Benutzerordner gehoeren dazu.
+    # Die Namen der angezeigten Prinzipale, je SID genau einmal aufgeloest
+    # (IDENT-06). Dieselbe Karte traegt die Befunde und den Detailbericht [R].
+    $prinzipalNamen = @{}
+    $anzeige = @{}
+
+    foreach ($sid in @(Get-AuditDisplaySid -Target $gepruefte -Result $alle -Snapshot $schnapp)) {
+        $kennung = [System.Security.Principal.SecurityIdentifier]::new([string] $sid)
+        $prinzipalNamen[[string] $sid] = Get-TrusteeDisplayName -Sid $kennung
+        $anzeige[[string] $sid] = [pscustomobject] @{ Sid = $kennung; DisplayName = [string] $prinzipalNamen[[string] $sid] }
+    }
+
+    # --- 7. Bericht, Ansicht und Rueckgabewert -----------------------------
+    # NAV-03: Schritt 2 beginnt mit einer Ausgabe -- der Kopf geht ueber die
+    # Ausgabenaht. Ansichtswahl und Benutzerordner gehoeren dazu. Zuerst die
+    # Tabellenansicht; B und T schalten um, ohne neu zu lesen.
     Write-OperatorLine -Capability $Capability -Line @(Get-StepHeaderRecord -Key 'AuditReport' -Sequence $folge)
 
-    Write-OperatorLine -Capability $Capability -Line @(
-        Format-AuditReport -Target $gepruefte -Result $alle -Capability $Capability -Group (Get-TrusteeRoleStore) `
-            -Owner (Get-AuditOwnerTable -Target $gepruefte -Snapshot $schnapp -OwnerName $besitzerNamen))
+    $besitzerTabelle = Get-AuditOwnerTable -Target $gepruefte -Snapshot $schnapp -OwnerName $besitzerNamen
+    $ansicht = 'Table'
+
+    while ($true) {
+
+        Write-OperatorLine -Capability $Capability -Line @(
+            Format-AuditReport -Target $gepruefte -Result $alle -Capability $Capability -Group $anzeige `
+                -Owner $besitzerTabelle -Snapshot $schnapp -Name $prinzipalNamen -View $ansicht)
+
+        if ($gepruefte.Count -eq 0) { break }
+
+        $wahl = Read-AuditViewChoice -Current $ansicht
+        if ($wahl -ceq 'Continue') { break }
+        $ansicht = $wahl
+    }
 
     # Der Pruefweg gilt fuer die Rueckgabewertregel als bestaetigt -- es gab
-    # nichts zu bestaetigen (D-17). Confirmed bleibt falsch: es wurde nichts
+    # nichts zu bestaetigen (D-17). Confirmed bleibt falsch: es wird nichts
     # geschrieben.
     $pruefCode = Get-ProvisioningExitCode -Result $alle -Confirmed $true
 
-    $pruefbericht = [pscustomobject] @{
+    # --- 8. Kein Angleichen mehr (Entscheidung Projektinhaber 2026-10-22) ---
+    # Ohne erfragte Gruppen gibt es kein eindeutiges Soll zum Schreiben. Bei
+    # einer Abweichung nur der Hinweis, wo sie sich beheben laesst.
+    if (@($alle | Where-Object { [string] $_.Status -ceq 'Error' }).Count -gt 0) {
+        Write-OperatorLine -Capability $Capability -Line @(
+            (New-OperatorTextLine -Text '  Weg 2 ändert nichts. Gruppen und ihre Rechte lassen sich über Weg 3 anpassen, Freigabe und')
+            (New-OperatorTextLine -Text '  Caching über Weg 1 mit dem vorhandenen Ordner.')
+        )
+    }
+
+    $ergebnis = [pscustomobject] @{
         ExitCode  = $pruefCode
         Confirmed = $false
         Target    = $gepruefte
         Result    = $alle
-    }
-
-    # --- 8. Angebot: abweichende Ziele angleichen (D-02, AUDIT-07) ----------
-    # Nur bei bewiesener Abweichung, Vorgabe nein. Ohne Zusage bleibt es ein
-    # reiner Prueflauf -- keine Schreib-Seam, auch keine Schreibprobe PRE-07
-    # (Planerentscheid 8): die gehoert zum Preflight und damit zur
-    # Schreibstrecke.
-    $abweichend = @(Select-AuditDeviation -Target $gepruefte -Result $alle)
-
-    $ergebnis = $pruefbericht
-
-    if (($abweichend.Count -gt 0) -and (Read-AuditAdjustOffer -Deviation $abweichend)) {
-
-        $schreibZiele = @(Read-AuditAdjustTarget -Target $abweichend)
-
-        # DIESELBE Schreibstrecke wie Weg 1: Soll binden, Preflight ueber alle
-        # anzugleichenden Ziele, Plan, getipptes JA, Schreiben mit Ruecklesen,
-        # Freigabe erst nach verifiziertem ACL, Zusammenfassung.
-        $lauf = Invoke-ProvisioningWrite -Target $schreibZiele -Capability $Capability
-
-        # Rueckgabewertregel (D-17, Planerentscheid 9): nach einem Angleichen
-        # bestimmt der Schreibpfad den Wert. Wurde JA nicht getippt (3), gilt
-        # der Pruefbericht -- es wurde nichts angeglichen, die Abweichungen
-        # bestehen fort. Eine Hostsperre im Preflight bleibt 2.
-        if ([bool] $lauf.Confirmed) {
-            $code = [int] $lauf.ExitCode
-        }
-        elseif ([int] $lauf.ExitCode -eq 3) {
-            $code = $pruefCode
-        }
-        else {
-            $code = 2
-        }
-
-        $ergebnis = [pscustomobject] @{
-            ExitCode  = $code
-            Confirmed = [bool] $lauf.Confirmed
-            Target    = $gepruefte
-            Result    = @(@($alle) + @($lauf.Result))
-        }
+        Group     = $anzeige
     }
 
     # --- 9. Benutzerordner, nur auf Wunsch (USR-01 bis USR-10) -------------
-    # Ganz am Ende: ein Angleichen der Wurzel ist dann schon geschrieben und
-    # vererbt, der Bericht zeigt den Stand danach. Rein lesend -- kein
+    # Ganz am Ende, hinter der Ansichtswahl. Rein lesend -- kein
     # Angebot, kein Schreibaufruf, auch nicht bei auffaelligen Ordnern.
     $benutzerordner = Invoke-UserFolderReport -Target $gepruefte -Capability $Capability
 
@@ -378,11 +338,10 @@ function Join-UserFolderOutcome {
         Der Rueckgabewert ist der hoehere aus Lauf und Bericht -- aber nur,
         wenn geprueft wurde. Kein Bericht senkt einen Wert. Die
         Ergebnissaetze der Stufe UserFolder stehen hinter denen des Laufs;
-        Confirmed und Target bleiben unveraendert. Ein nicht bestaetigtes
-        Angleichen (3) ist vorher bereits auf den Pruefwert abgebildet.
+        Confirmed, Target und Group bleiben unveraendert.
 
     .OUTPUTS
-        [pscustomobject] mit ExitCode, Confirmed, Target und Result.
+        [pscustomobject] mit ExitCode, Confirmed, Target, Result und Group.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -402,11 +361,15 @@ function Join-UserFolderOutcome {
         $saetze = [object[]] (@($saetze) + @($UserFolder.Result))
     }
 
+    $gruppe = $null
+    if ($null -ne $Run.PSObject.Properties['Group']) { $gruppe = $Run.Group }
+
     return [pscustomobject] @{
         ExitCode  = [int] $code
         Confirmed = [bool] $Run.Confirmed
         Target    = $Run.Target
         Result    = $saetze
+        Group     = $gruppe
     }
 }
 

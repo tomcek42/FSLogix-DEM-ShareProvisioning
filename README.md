@@ -6,7 +6,6 @@ permissions as documented by the respective vendor, creates the SMB shares, and 
 result by reading it back.
 
 [![Download Latest Release](https://img.shields.io/github/v/release/tomcek42/FSLogix-DEM-ShareProvisioning?label=Download&style=for-the-badge)](https://github.com/tomcek42/FSLogix-DEM-ShareProvisioning/releases/latest)
-![Downloads](https://img.shields.io/github/downloads/tomcek42/FSLogix-DEM-ShareProvisioning/total?style=for-the-badge&label=Downloads)
 
 > **Disclaimer — not an official tool.** This is an independent community project. It is not
 > affiliated with, endorsed by, or supported by Microsoft Corporation or Omnissa, LLC.
@@ -49,7 +48,7 @@ The tool offers three modes from one main menu:
 | Mode | What it does |
 |---|---|
 | **1 — Provision new storage** | Create folders (or adopt existing ones), set the NTFS permissions, verify them, create the SMB share and verify it. Nothing is written until you type `JA` ("yes"). |
-| **2 — Audit existing storage** | Scan a root folder, recognize the storage types by name, read the groups from the existing ACL, and check NTFS permissions, share permissions, offline caching and owner. Deviations can then be corrected through the same write path, again only after confirmation. Optionally, the user folders below profile shares are checked **read-only**. |
+| **2 — Audit existing storage** | Scan a root folder and recognize the storage types by name. Without asking for any group, it lists every principal on each storage location with its role (derived from its rights), its NTFS and share permissions and whether these are valid; any number of groups per role is accepted. It also checks offline caching, inheritance and owner. Shown as one table (default) or as one block per storage location. This mode never writes; fix deviations with mode 3 (groups) or mode 1 (share, caching). Optionally, the user folders below profile shares are checked **read-only**. |
 | **3 — Adjust NTFS permissions** | Add, replace or remove groups on the root of existing storage locations. A group always receives exactly the permissions of a role, never free-form rights. |
 
 Supported storage types:

@@ -267,11 +267,18 @@ function Invoke-DemFsMenuLoop {
             $ziele = @(@($lauf.Target) | Where-Object { $null -ne $_ })
         }
 
+        # Weg 2 erhebt keine Rollen mehr; er bringt die Namen seiner
+        # Prinzipale im Feld Group mit (seit 2026-10-22).
+        $gruppen = Get-TrusteeRoleStore
+        if (($null -ne $lauf) -and ($null -ne $lauf.PSObject.Properties['Group']) -and ($lauf.Group -is [hashtable])) {
+            $gruppen = $lauf.Group
+        }
+
         $abschluss = Read-RunCloseChoice
 
         while ($abschluss -ceq 'Report') {
             Write-OperatorLine -Capability $kapazitaet -Line @(
-                Format-RunDetailReport -Target $ziele -Group (Get-TrusteeRoleStore))
+                Format-RunDetailReport -Target $ziele -Group $gruppen)
             $abschluss = Read-RunCloseChoice
         }
 
